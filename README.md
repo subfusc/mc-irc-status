@@ -1,3 +1,7 @@
 # Howto use
 
-    bundle exec ruby <logfile> <irc-server> <channel> <nick>
+    cd mc-irc-status/
+    sudo bundle install
+    bundle exec ruby <minecraft-server.jar> <irc-server> <channel> <nick>
+
+Remember to update eula.txt

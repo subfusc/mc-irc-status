@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # coding: utf-8
 require 'irconnect'
-require 'file-tail'
+require 'pty'
 
 JOIN_RE = /:\s(?<nick>\S+)\s+joined the game\s*$/i
 PART_RE = /:\s(?<nick>\S+)\s+left the game\s*$/i
@@ -14,32 +14,39 @@ def connect_to_irc(server, channel, nick)
   return connection
 end
 
-def pong_irc_connection(connection)
-  loop do
-    connection.receive
+def minecraft_main_loop(jar_file, channel, connection)
+
+  PTY.spawn(format('java -Xmx1024M -Xms1024M -jar %s nogui', jar_file)) do |read, write, pid|
+     Thread.new do
+       loop do
+           c = connection.receive
+           if c.command == 'PRIVMSG'
+             write.puts(format('say <%s> %s', c.sender, c.params[1..-1].join(' :')))
+           end
+       end
+     end
+
+     Thread.new do
+       loop do
+         line = read.readline
+         puts(line)
+         if (match = JOIN_RE.match(line))
+           connection.privmsg('#' + channel, format('%s logget inn på MC', match['nick']))
+         elsif (match = PART_RE.match(line))
+           connection.privmsg('#' + channel, format('%s logget ut fra MC', match['nick']))
+         elsif (match = MSG_RE.match(line))
+           connection.privmsg('#' + channel, format('<%s> %s', match['nick'], match['message']))
+         end
+       end
+     end
+
+     loop do
+       line = $stdin.readline
+       write.puts(line)
+     end
   end
 end
 
-def minecraft_log_reader(filename, channel, connection)
-  File.open(filename) do |log|
-    log.extend(File::Tail)
-    log.interval = 1
-    log.backward(1)
-    log.tail do |line|
-      puts(line)
-      if (match = JOIN_RE.match(line))
-        connection.privmsg('#' + channel, format('%s logget inn på MC', match['nick']))
-      elsif (match = PART_RE.match(line))
-        connection.privmsg('#' + channel, format('%s logget ut fra MC', match['nick']))
-      elsif (match = MSG_RE.match(line))
-        connection.privmsg('#' + channel, format('<%s> %s', match['nick'], match['message']))
-      end
-    end
-  end
-end
 
 connection = connect_to_irc(ARGV[1], ARGV[2], ARGV[3])
-Thread.new do
-  pong_irc_connection(connection)
-end
-minecraft_log_reader(ARGV[0], ARGV[2], connection)
+minecraft_main_loop(ARGV[0], ARGV[2], connection)
